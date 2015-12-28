@@ -1,0 +1,186 @@
+global path = require("path");
+global fs = require("fs");
+global request = require("request");
+
+define Success {
+  data : undefined,
+  constructor : function(data){
+    this.data = data;
+  }
+}
+
+define GatherActions {
+  gather_rules:[]
+}
+
+define InputParameters {
+  file_path : process.cwd() + '/app.json',
+  starting_path: process.cwd(),
+  file_name : 'app.json',
+  url : '',
+  credentials: null,
+  data : undefined,
+  priorities : []
+}
+
+define GivenFilepath {
+  file_path : process.cwd() + '/app.json'
+}
+
+define RecurseUpwards {
+  starting_path : process.cwd(),
+  file_name : 'app.json'
+}
+
+define FromWebServer {
+  url: '',
+  credentials : null
+}
+
+define DefaultData {
+  data : undefined
+}
+
+define Prioritization {
+  priorities : []
+}
+
+rule "Create Actions" {
+  when {
+    not(gf : GivenFilepath);
+    not(ru : RecurseUpwards);
+    not(fws : FromWebServer);
+    not(dd : DefaultData);
+    inp : InputParameters;
+  } then {
+    assert(new GivenFilepath({file_path: inp.file_path}));
+    assert(new RecurseUpwards({file_name: inp.file_name, starting_path: inp.starting_path}));
+    assert(new FromWebServer({url: inp.url, credentials : inp.credentials}));
+    assert(new DefaultData({data: inp.data}));
+  }
+}
+
+rule "Create Default Prioritization" {
+  when {
+    not(p : Prioritization);
+    gf : GivenFilepath;
+    ru : RecurseUpwards;
+    fws : FromWebServer;
+    dd : DefaultData;
+    inp : InputParameters inp.priorities.length === 0;
+  } then {
+    assert(new Prioritization({priorities: [gf, fws, ru, dd]}));
+
+  }
+}
+
+rule "Create Specific Prioritization" {
+  when {
+    not(p : Prioritization);
+    gf : GivenFilepath;
+    ru : RecurseUpwards;
+    fws : FromWebServer;
+    dd : DefaultData;
+    inp : InputParameters inp.priorities.length !== 0;
+  } then {
+    var priorities = inp.priorities.map(function(priorityName){
+      switch(priorityName.toLowerCase()){
+        case "filepath" : return gf;
+        case "recurseupwards" : return ru;
+        case "webserver" : return fws;
+        default : return dd;
+      }
+    });
+    priorities.push(dd);
+    assert(new Prioritization({priorities: priorities}));
+  }
+}
+
+rule "Run Web Server" {
+  when {
+    not(s : Success);
+    p : Prioritization p.priorities.length !== 0;
+    fws : FromWebServer from p.priorities[0];
+  } then {
+    modify(p, function(){
+      this.priorities.shift();
+    });
+
+    if(fws.url === ''){
+      next();
+      return;
+    }
+    request.get(fws.url, function(err, res, body){
+      if(err){
+        next();
+        return;
+      }
+      assert(new Success(body));
+      next();
+    });
+  }
+}
+
+rule "Run FilePath" {
+  when {
+    not(s : Success);
+    p : Prioritization p.priorities.length !== 0;
+    fp : GivenFilepath from p.priorities[0];
+  } then {
+    modify(p, function(){
+      this.priorities.shift();
+    });
+    fs.access(fp.file_path, function(err){
+      if(err){
+        next();
+        return;
+      }
+      fs.readFile(fp.file_path, "utf8", function(err, data){
+        if(err){
+          next();
+          return;
+        }
+        assert(new Success(data));
+        next();
+      })
+    });
+  }
+}
+
+rule "Run Recurse Upwards" {
+  when {
+    not(s : Success);
+    p : Prioritization p.priorities.length !== 0;
+    ru : RecurseUpwards from p.priorities[0];
+  } then {
+    modify(p, function(){
+      this.priorities.shift();
+    });
+    var lastPath = path.join(ru.starting_path, ru.file_name);
+    var upwards = "./";
+    var newFPs = [];
+    do{
+      lastPath = path.join(ru.starting_path,upwards, ru.file_name);
+      newFPs.push(new GivenFilepath({file_path: lastPath}));
+      upwards += "/..";
+    }while(lastPath !== path.join(ru.starting_path, upwards, ru.file_name))
+    newFPs.reverse();
+    modify(p, function(){
+      this.priorities = newFPs.concat(this.priorities);
+    });
+  }
+}
+
+rule "Run DefaultData" {
+  when {
+    not(s : Success);
+    p : Prioritization p.priorities.length !== 0;
+    dd : DefaultData from p.priorities[0];
+  } then {
+    modify(p, function(){
+      this.priorities.shift();
+    });
+
+    assert(new Success(dd.data));
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "the-gathering",
+  "version": "1.0.0",
+  "description": "Will gather files based on a prioritization of rules.",
+  "main": "index.js",
+  "scripts": {
+    "test": "grunt test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stierma1/the-gathering.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/stierma1/the-gathering/issues"
+  },
+  "homepage": "https://github.com/stierma1/the-gathering#readme",
+  "dependencies": {
+    "nools": "^0.4.1",
+    "request": "^2.67.0"
+  }
+}
